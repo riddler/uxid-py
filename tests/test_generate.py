@@ -418,6 +418,29 @@ def test_rand_with_from_is_refused_whatever_its_width() -> None:
         assert refused.value.code == "rand_with_from"
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"rand": "abc"}, id="rand-str"),
+        pytest.param({"rand": bytearray(2)}, id="rand-bytearray"),
+        pytest.param({"rand": b"", "size": 1}, id="size-int"),
+        pytest.param({"rand": b"", "case": None}, id="case-none"),
+        pytest.param({"rand": b"", "prefix": None, "time": 1.5}, id="prefix-and-time"),
+    ],
+)
+# sabotage: checking argument types before rand_with_from fails it
+def test_rand_with_from_is_checked_before_any_other_argument(
+    kwargs: dict[str, Any],
+) -> None:
+    refused: Exception | None = None
+    try:
+        uxid.generate(from_="x", **kwargs)
+    except Exception as error:
+        refused = error
+    assert isinstance(refused, uxid.UXIDError), repr(refused)
+    assert refused.code == "rand_with_from"
+
+
 # sabotage: writing the marker as x (value 29) fails it
 def test_a_deterministic_id_sorts_after_every_time_based_id() -> None:
     deterministic = uxid.generate(prefix="usr", from_="", size="xs")

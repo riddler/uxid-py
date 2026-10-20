@@ -150,7 +150,8 @@ def generate(
     character would be the deterministic marker (the low 40 bits of the time
     at or above 31 x 2**35, the last thirty-second of every 2**40 millisecond
     window; in the current window, from mid-2038 until it rolls over in
-    2039), and ``rand_with_from`` for ``rand`` given with ``from_``. Raises a
+    2039), and ``rand_with_from`` for ``rand`` given with ``from_``, which is
+    checked before every other argument, the type of each included. Raises a
     plain ``ValueError`` for any other value it refuses: an unknown size or
     case, an empty delimiter, a negative ``rand_size``, a time outside 0 to
     2**48 - 1, a byte source that returns the wrong number of bytes, and, for
@@ -159,15 +160,15 @@ def generate(
     wrong type, ``bool`` included where an ``int`` is asked for, and for a
     byte source that does not return bytes.
     """
-    _check_types(
-        prefix, rand_size, compact_time, delimiter, time, rand, byte_source, from_
-    )
     if from_ is not None and rand is not None:
         raise UXIDError(
             "rand_with_from",
             "rand: cannot be given with from_: a deterministic body has no"
             " random field",
         )
+    _check_types(
+        prefix, rand_size, compact_time, delimiter, time, rand, byte_source, from_
+    )
     canonical = _canonical_size(size)
     alphabet = _alphabet(case)
     if not delimiter:
