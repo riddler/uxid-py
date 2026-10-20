@@ -1,0 +1,312 @@
+name: Release
+
+# Publishes this package to PyPI when a version tag is pushed, and only when
+# four things hold at the tagged commit: it is on the default branch, the tag
+# is `v` followed by the version pyproject.toml states there ([project]
+# version), PyPI does not already show that version, and the full quality
+# gate is green there. Nothing else triggers it - no branch push, no pull
+# request, no manual dispatch.
+#
+# Two jobs, each checking out the tagged commit (github.sha):
+#
+# - `verify` (contents: read, and no other permission) runs the first three
+#   checks before anything is installed, then the full quality gate, then
+#   `uv build`, which builds the sdist and the wheel. It records the SHA-256
+#   of each in a SHA256SUMS file and uploads the two files and SHA256SUMS as
+#   one workflow artifact, and records the SHA-256 of SHA256SUMS itself as
+#   this job's output. The build, and everything the gate runs, run here, in
+#   a job that cannot ask GitHub for an OIDC token.
+# - `publish` (contents: read and id-token: write, the only job that can ask
+#   for an OIDC token) starts only when `verify` succeeded. It runs the
+#   version check and the PyPI check again rather than trusting `verify`'s
+#   result, because a re-run of this job alone can come long after `verify`
+#   ran. It downloads the artifact and stops unless SHA256SUMS has the
+#   SHA-256 `verify` recorded, every file in it has the SHA-256 SHA256SUMS
+#   lists, and the artifact's dist/ directory holds no other file. Only then
+#   does it run pypa/gh-action-pypi-publish on those files. Nothing in this job
+#   builds anything, and nothing is installed in it beyond what that action
+#   brings.
+#
+# Every action `publish` uses is pinned to a full commit SHA, with its
+# version in a trailing comment, because every step in that job can reach
+# the OIDC request credentials and a moved tag must not be able to mint a
+# PyPI token. `verify` and ci.yml keep major-version tags: neither holds any
+# permission beyond contents: read, so a moved tag there cannot reach one.
+#
+# A failure in `verify` publishes nothing: `publish` does not start and no
+# token is asked for. A failure in `publish` before the upload publishes
+# nothing either. The upload sends the files one at a time, and PyPI shows
+# the version from the first file it accepts: a failure after that - part
+# way through the upload, or in the address step after it - leaves the
+# version on PyPI, perhaps with only some of its files, and the run red.
+# This workflow never uploads to a version PyPI already shows (and PyPI never
+# accepts a file name it has seen before, even after a delete), so a re-run
+# stops at the "already on PyPI" check (in `verify`, or in `publish` when
+# that job is re-run alone) and reports it, and the run stays red although
+# the version was published. No failure moves or deletes the tag.
+#
+# The manual act this workflow needs is a re-run from the run's page in the
+# Actions tab (every job, or the failed `publish` job alone, which reuses the
+# artifact and the SHA-256 `verify` recorded while the artifact is kept),
+# for a run that failed before the upload for a reason outside the tagged
+# commit, such as a registry or network error, PyPI answering the PyPI check
+# with a status other than 200 or 404, a gate step that failed on the runner
+# rather than on the code, or a token exchange that failed before PyPI
+# trusted this workflow. A failure the tagged commit itself causes (it is not
+# on the default branch, the tag and pyproject.toml name different versions,
+# the gate is red) fails the same way on every re-run.
+#
+# PyPI trusted publishing: pypa/gh-action-pypi-publish exchanges this run's
+# OIDC identity for a short-lived PyPI token, uploads the files with it, and
+# signs each file with the same identity, uploading the PEP 740 attestations
+# beside them (the action's default). The workflow reads no secret (no
+# `secrets` expression appears in this file), passes the action no password
+# and no token, and names no GitHub environment. The checkouts use GitHub's
+# automatic per-job GITHUB_TOKEN, limited to that job's `permissions`, and
+# the artifact upload and download use the credentials the runner provides
+# for the run's own artifact storage. PyPI accepts the exchange only once the `uxid`
+# project's settings on PyPI name this repository and this workflow file as
+# a trusted publisher, with no environment; until then the exchange fails and
+# nothing is published.
+#
+# This file records the publish decision for this repository, which keeps no
+# decision records (CLAUDE.md, "Agent authority in this repo": the "Release
+# preps" paragraph and the paragraph after it, which says where a release
+# decision is recorded). This workflow is the only publisher: it publishes on
+# the push of the tag that names a merged release prep. An agent or a session
+# never uploads to PyPI, and a failed run is re-run from its Actions page,
+# never worked round by a local publish.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# The default for every job: contents: read, every other permission none.
+# Each job states its own permissions below, and only `publish` adds
+# id-token: write. The tag already exists when this runs, and nothing here
+# creates or pushes one.
+permissions:
+  contents: read
+
+# One run per tag, and a run in progress is never cancelled: a publish cut
+# off part way is worse than one that finishes.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify, gate and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # contents: read for the checkout and the default branch fetch. No
+    # id-token: nothing in this job can ask GitHub for an OIDC token.
+    permissions:
+      contents: read
+
+    # The SHA-256 of SHA256SUMS, which `publish` matches before it uploads.
+    outputs:
+      sums_sha256: ${{ steps.build.outputs.sums_sha256 }}
+
+    steps:
+      # The tagged commit, by SHA. Full history: the ancestry check below
+      # walks it.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      # The default branch is read from the push event itself, never written
+      # here, so a renamed default branch needs no edit to this file.
+      - name: Fetch the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test -n "$DEFAULT_BRANCH" || { echo "::error::the push event names no default branch" >&2; exit 1; }
+          git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+
+      # The three checks are scripts/release_guard.py at the tagged commit,
+      # run with the runner's own python3 (the script uses the standard
+      # library only), so they run before any toolchain is installed.
+      - name: Check the tagged commit is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python3 scripts/release_guard.py branch --default-branch "$DEFAULT_BRANCH"
+
+      # `publish` runs the same check again.
+      - name: Check the tag names the version in pyproject.toml
+        run: python3 scripts/release_guard.py version --tag "$GITHUB_REF_NAME"
+
+      # A version PyPI already shows is reported, never published again
+      # (PyPI would refuse the same files anyway). The project name is read
+      # from pyproject.toml, so the version checked is the version of the
+      # package this run would publish. This read needs no token. `publish`
+      # runs the same check again just before it uploads.
+      - name: Check PyPI does not already show this version
+        run: python3 scripts/release_guard.py pypi --tag "$GITHUB_REF_NAME"
+
+      # --- the toolchain and the full quality gate, exactly as ci.yml's gate
+      # job runs them.
+
+      # The toolchain comes from mise.toml, provisioned by mise itself: the
+      # Python release and uv, at the versions pinned there. No tool cache is
+      # restored in either job of this workflow: a release installs its tools
+      # fresh rather than from a cache another run wrote.
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.8.2
+          cache: false
+
+      # The command is read out of .claude/wurk.json (gate.full), the gate an
+      # agent must have green before committing. It is read and executed
+      # inside the step rather than interpolated into `run:`, so a repository
+      # file never reaches the shell as expression text.
+      - name: Full quality gate
+        run: |
+          set -euo pipefail
+          mapfile -t cmd < <(jq -er '.gate.full[]' .claude/wurk.json)
+          test "${#cmd[@]}" -gt 0 || { echo "::error::gate.full is empty" >&2; exit 1; }
+          echo "gate command (.claude/wurk.json gate.full): ${cmd[*]}"
+          "${cmd[@]}"
+
+      # --- end of the gate.
+
+      # The gate's build output lands under dist/ and its tool caches and
+      # virtual environment beside it, all of which .gitignore covers. A gate
+      # that left any changed file, or any untracked file that is not
+      # ignored, stops the release here, with the files named.
+      - name: Check the gate left the checkout clean
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            echo "::error::the gate left changed or untracked files; nothing is published" >&2
+            exit 1
+          fi
+
+      # The release's own build, into an empty directory outside the gate's
+      # dist/: `uv build` builds the sdist, then the wheel from the sdist,
+      # installing the build backend pyproject.toml's [build-system] names
+      # into an isolated environment for the build. uv also writes a
+      # .gitignore into the directory, which is removed. The step stops
+      # unless the directory then holds exactly one sdist and one wheel, each
+      # named for the tag's version, and no other file. SHA256SUMS lists the
+      # SHA-256 of each, and the SHA-256 of SHA256SUMS is this job's output.
+      - name: Build the distributions and record their SHA-256
+        id: build
+        run: |
+          set -euo pipefail
+          version="$(python3 scripts/release_guard.py version --tag "$GITHUB_REF_NAME")"
+          rm -rf release
+          mkdir -p release/dist
+          mise exec -- uv build --out-dir release/dist
+          rm -f release/dist/.gitignore
+          cd release
+          shopt -s nullglob
+          sdists=(dist/*-"${version}".tar.gz)
+          wheels=(dist/*-"${version}"-*.whl)
+          everything="$(find dist -type f | wc -l)"
+          if [ "${#sdists[@]}" -ne 1 ] || [ "${#wheels[@]}" -ne 1 ] || [ "$everything" -ne 2 ]; then
+            ls -la dist
+            echo "::error::uv build did not leave exactly one sdist and one wheel for ${version}; nothing is published" >&2
+            exit 1
+          fi
+          sha256sum "${sdists[0]}" "${wheels[0]}" > SHA256SUMS
+          cat SHA256SUMS
+          sums_sha256="$(sha256sum SHA256SUMS | cut -d ' ' -f 1)"
+          echo "SHA256SUMS sha256 ${sums_sha256}"
+          echo "sums_sha256=${sums_sha256}" >> "$GITHUB_OUTPUT"
+
+      # The two distributions and SHA256SUMS, under release/, as one
+      # artifact `publish` downloads.
+      - name: Upload the distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: distributions
+          path: release/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # contents: read for the checkout; id-token: write lets the publish
+    # action ask GitHub for the OIDC token PyPI trusts. This is the only job
+    # that holds it.
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      # The same commit `verify` checked out, for pyproject.toml and the
+      # guard script. Nothing here fetches again, so the checkout keeps no
+      # credential in the repository's git config.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      # The same check as in `verify`, run again here: a re-run of this job
+      # alone does not re-run `verify`.
+      - name: Check the tag names the version in pyproject.toml
+        run: python3 scripts/release_guard.py version --tag "$GITHUB_REF_NAME"
+
+      # The same check as in `verify`, run again just before the upload:
+      # PyPI's answer can change while the gate runs, and this is the check
+      # that stops a re-run of a run that did publish.
+      - name: Check PyPI does not already show this version
+        run: python3 scripts/release_guard.py pypi --tag "$GITHUB_REF_NAME"
+
+      - name: Download the distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: release
+
+      # The files to upload are the ones `verify` built, or nothing is
+      # published: SHA256SUMS has the SHA-256 `verify` recorded, each file it
+      # lists has the SHA-256 it lists, and release/dist/ holds those files
+      # and no other.
+      - name: Match the distributions to the ones verify built
+        env:
+          VERIFIED_SUMS_SHA256: ${{ needs.verify.outputs.sums_sha256 }}
+        run: |
+          set -euo pipefail
+          test -n "$VERIFIED_SUMS_SHA256" || { echo "::error::verify recorded no SHA256SUMS SHA-256; nothing is published" >&2; exit 1; }
+          cd release
+          test -f SHA256SUMS || { echo "::error::the artifact holds no SHA256SUMS; nothing is published" >&2; exit 1; }
+          sums_sha256="$(sha256sum SHA256SUMS | cut -d ' ' -f 1)"
+          if [ "$sums_sha256" != "$VERIFIED_SUMS_SHA256" ]; then
+            echo "::error::SHA256SUMS has sha256 ${sums_sha256}, but the one verify wrote has ${VERIFIED_SUMS_SHA256}; nothing is published" >&2
+            exit 1
+          fi
+          sha256sum --check --strict SHA256SUMS || { echo "::error::a distribution does not match SHA256SUMS; nothing is published" >&2; exit 1; }
+          listed="$(cut -d ' ' -f 3 SHA256SUMS | sort)"
+          present="$(find dist -type f | sort)"
+          if [ "$listed" != "$present" ]; then
+            printf 'listed:\n%s\npresent:\n%s\n' "$listed" "$present"
+            echo "::error::release/dist/ holds files SHA256SUMS does not list; nothing is published" >&2
+            exit 1
+          fi
+          echo "release/dist/ matches the SHA256SUMS verify wrote (sha256 ${sums_sha256})"
+
+      # Pinned by SHA, as every action in this job is. The action runs its
+      # upload in the container image ghcr.io/pypa/gh-action-pypi-publish
+      # tagged with that commit SHA. No password and no token is passed: it authenticates through
+      # this run's OIDC identity (trusted publishing). No git tag is created
+      # or pushed.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: release/dist/
+
+      - name: Print the published version's address
+        run: |
+          set -euo pipefail
+          version="$(python3 scripts/release_guard.py version --tag "$GITHUB_REF_NAME")"
+          echo "https://pypi.org/project/uxid/${version}/"

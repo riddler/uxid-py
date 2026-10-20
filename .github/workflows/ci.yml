@@ -1,0 +1,117 @@
+name: CI
+
+# Two jobs. `gate` runs the full quality gate - the command an agent must
+# have green before committing - on the Python mise.toml pins. `tests` runs
+# the test suite once on each Python minor the package supports, 3.11
+# through 3.14 (pyproject.toml's requires-python floor through the newest
+# minor its classifiers list), so a change that works only on a newer Python
+# is caught before it ships.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only: nothing here writes to the repository or authenticates to a
+# registry.
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request supersedes the run in
+# progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Full quality gate (mise.toml Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The toolchain comes from mise.toml, provisioned by mise itself: the
+      # Python release and uv, at the versions pinned there. A version
+      # written into this file would drift the first time mise.toml moves.
+      # The action installs mise at the version below, runs `mise install`
+      # against mise.toml, and caches the tools. mise.toml's UV_PYTHON points
+      # every `uv` command the gate runs at that Python.
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.8.2
+
+      # The gate is mise.toml's `gate` task: ruff format and lint, mypy, the
+      # conformance corpus check, the tests with coverage (the corpus runner
+      # among them) and the build. The command is read out of
+      # .claude/wurk.json (gate.full) rather than written here, so the gate
+      # CI runs and the gate an agent must have green are one definition with
+      # one place to change it. It is read and executed inside the step
+      # rather than interpolated into `run:`, so a repository file never
+      # reaches the shell as expression text.
+      - name: Full quality gate
+        run: |
+          set -euo pipefail
+          mapfile -t cmd < <(jq -er '.gate.full[]' .claude/wurk.json)
+          test "${#cmd[@]}" -gt 0 || { echo "::error::gate.full is empty" >&2; exit 1; }
+          echo "gate command (.claude/wurk.json gate.full): ${cmd[*]}"
+          "${cmd[@]}"
+
+      # A gate that rewrites a tracked file (uv.lock out of step with
+      # pyproject.toml, say) or leaves an untracked file that is not ignored
+      # passes locally only because the change is then committed; here it is
+      # a failure, as it is before a publish.
+      - name: Check the gate left the checkout clean
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            echo "::error::the gate left changed or untracked files" >&2
+            exit 1
+          fi
+
+  tests:
+    name: Tests on Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The interpreter under test comes from actions/setup-python, one per
+      # matrix entry.
+      - name: Install Python ${{ matrix.python }}
+        id: python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      # uv comes from mise.toml, at the version pinned there. mise installs
+      # mise.toml's Python too: mise.toml's UV_PYTHON is rendered from that
+      # install, and the `--python` below overrides it for this job.
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.8.2
+
+      # `--python` names the interpreter setup-python installed, by path, so
+      # uv builds this job's virtual environment on it and on nothing else;
+      # the first command stops the job if the environment's Python is not
+      # the matrix entry's minor. `--frozen`: the suite runs against the
+      # packages uv.lock pins, and a lock that does not hold is a failure
+      # here rather than re-resolved.
+      - name: Test on Python ${{ matrix.python }}
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+          MINOR: ${{ matrix.python }}
+        run: |
+          set -euo pipefail
+          mise exec -- uv run --frozen --python "$PYTHON" python -c 'import os, sys; v = "%d.%d" % sys.version_info[:2]; print(sys.version); sys.exit(v != os.environ["MINOR"])'
+          mise exec -- uv run --frozen --python "$PYTHON" pytest
