@@ -446,6 +446,31 @@ def test_a_compact_marker_time_is_refused_and_leaves_the_state() -> None:
     assert ids.generate(time=(1 << 40) + 5)[:8] == "00000005"
 
 
+# sabotage: storing the new state before building the body fails it
+def test_after_a_compact_marker_refusal_a_smaller_step_answers_the_same_time() -> None:
+    guard = 31 * (1 << 35)
+    draws = Recorded({"initial_seed": 0xFFFFF0, "overflow_seed": 0, "steps": [0x20, 1]})
+    ids = uxid.Monotonic(size="s", compact_time=True, draws=draws)
+    assert ids.generate(time=guard - 1) == uxid.generate(
+        size="s", compact_time=True, time=guard - 1, rand=b"\xff\xff\xf0"
+    )
+    # 0xfffff0 + 0x20 overflows into the guard's first millisecond: refused,
+    # and the generator keeps the first id's state.
+    with pytest.raises(uxid.UXIDError) as refused:
+        ids.generate(time=guard - 1)
+    assert refused.value.code == "compact_time_out_of_range"
+    # A smaller step from that state fits, so the id carries the last time.
+    try:
+        answered = ids.generate(time=guard - 1)
+    except uxid.UXIDError as error:
+        pytest.fail(f"refused again ({error.code}): the refusal moved the state")
+    assert answered == "yzzzzzzzzzzz1"
+    assert answered == uxid.generate(
+        size="s", compact_time=True, time=guard - 1, rand=b"\xff\xff\xf1"
+    )
+    assert draws.steps == []
+
+
 @pytest.mark.parametrize(
     ("seed", "error"),
     [

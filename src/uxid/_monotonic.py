@@ -206,9 +206,12 @@ class Monotonic:
 
         Raises ``uxid.UXIDError`` with ``compact_time_out_of_range`` for a
         compact time the id would carry whose first character would be the
-        deterministic marker; when that time is the millisecond after the
-        last id's, reached by an overflow, the refusal repeats while ``time``
-        stays at or before the last id's. Raises a plain ``ValueError`` for a
+        deterministic marker. When that time is the millisecond after the
+        last id's, reached by an overflow, the refused call leaves the
+        generator as it was: a later call at or before the last id's time
+        draws a new step, and is refused again only while the last value
+        plus that step still overflows the field; a smaller step answers an
+        id at the last id's time. Raises a plain ``ValueError`` for a
         time outside 0 to 2**48 - 1, a step that overflows the field in
         millisecond 2**48 - 1 (the last a time field holds), a byte source
         that returns the wrong number of bytes and a draw outside its range.
