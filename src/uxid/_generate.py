@@ -1,8 +1,10 @@
-"""Time-based id generation under an optional prefix."""
+"""Id generation, time-based or deterministic, under an optional prefix."""
 
+import hashlib
 import secrets
 import time as _time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import Literal
 
 from uxid._base32 import LOWER, UPPER, encode_bytes, encode_integer
@@ -20,27 +22,36 @@ Case = Literal["lower", "upper"]
 ByteSource = Callable[[int], bytes]
 """A source of random bytes: called with a count, it returns that many bytes."""
 
-_SIZES: dict[str, str] = {
-    "xs": "xs",
-    "xsmall": "xs",
-    "s": "s",
-    "small": "s",
-    "m": "m",
-    "medium": "m",
-    "l": "l",
-    "large": "l",
-    "xl": "xl",
-    "xlarge": "xl",
-}
+_SIZES: Mapping[str, str] = MappingProxyType(
+    {
+        "xs": "xs",
+        "xsmall": "xs",
+        "s": "s",
+        "small": "s",
+        "m": "m",
+        "medium": "m",
+        "l": "l",
+        "large": "l",
+        "xl": "xl",
+        "xlarge": "xl",
+    }
+)
 
 # The random field's width in bytes per size: standard time, then compact time.
-_RAND_BYTES: dict[str, tuple[int, int]] = {
-    "xs": (0, 1),
-    "s": (2, 3),
-    "m": (5, 6),
-    "l": (7, 8),
-    "xl": (10, 10),
-}
+_RAND_BYTES: Mapping[str, tuple[int, int]] = MappingProxyType(
+    {
+        "xs": (0, 1),
+        "s": (2, 3),
+        "m": (5, 6),
+        "l": (7, 8),
+        "xl": (10, 10),
+    }
+)
+
+# The hash characters of a deterministic body per size, after the marker.
+_HASH_CHARS: Mapping[str, int] = MappingProxyType(
+    {"xs": 9, "s": 13, "m": 17, "l": 21, "xl": 25}
+)
 
 _MAX_RAND_BYTES = 10
 _MAX_TIME = (1 << 48) - 1
@@ -59,12 +70,15 @@ def generate(
     time: int | None = None,
     rand: bytes | None = None,
     byte_source: ByteSource = secrets.token_bytes,
+    from_: str | None = None,
 ) -> str:
-    """Generate a time-based id: the prefix, the delimiter, then the body.
+    """Generate an id: the prefix, the delimiter, then the body.
 
-    The body is a time field followed by a random field in Crockford Base32,
-    laid out as uxid-ex's wire-format spec defines it. Every argument is a
-    keyword argument and every one has a default:
+    The body is in Crockford Base32, laid out as uxid-ex's wire-format spec
+    defines it. It is time-based, a time field followed by a random field,
+    unless ``from_`` is given; then it is deterministic, the marker character
+    and then a hash, so the same arguments always give the same id. Every
+    argument is a keyword argument and every one has a default:
 
     - ``prefix``: written before the delimiter exactly as given (case never
       applies to it), and it may contain the delimiter. An empty string, the
@@ -97,6 +111,19 @@ def generate(
       at most once per id, and never when the random width is 0 or ``rand``
       is given. Defaults to ``secrets.token_bytes``; a source for real ids
       must be cryptographically secure.
+    - ``from_``: the string a deterministic body is the hash of (the trailing
+      underscore because ``from`` is a Python keyword). ``None``, the
+      default, gives a time-based id; any string, the empty string included,
+      gives a deterministic one. Its body is the marker, ``z`` (``Z`` in an
+      upper-case id), then the first 5 x count bits of the SHA-256 of the
+      prefix, a zero byte, ``from_``, a zero byte and one byte holding count,
+      the prefix and ``from_`` as UTF-8. Count is the size's number of hash
+      characters, 9, 13, 17, 21 and 25 from ``xs`` to ``xl``, so the body has
+      the size's standard length. ``time``, ``compact_time``, ``rand_size``
+      and ``byte_source`` do not apply: their values are not read and the
+      byte source is not called, though each is still type-checked. A
+      deterministic id sorts after every time-based id with its prefix and
+      case, and it is exactly as guessable as ``from_``.
 
     Every width and length here is counted in bytes.
 
@@ -113,24 +140,41 @@ def generate(
     '01hf7yat0000000000'
     >>> len(uxid.generate(prefix="usr"))
     30
+    >>> uxid.generate(prefix="cus", from_="acme-corp", size="s")
+    'cus_zt9vnyfd85bff0'
 
     Raises ``uxid.UXIDError``, with its ``code``, for a refusal the wire
     format names: ``rand_size_too_large`` for a ``rand_size`` above 10,
     ``rand_width_mismatch`` for ``rand`` bytes whose count is not the random
-    width, and ``compact_time_out_of_range`` for a compact time whose first
-    character would be the deterministic marker (from mid-2038 until the
-    40-bit window rolls over in 2039). Raises a plain ``ValueError`` for any
-    other value it refuses: an unknown size or case, an empty delimiter, a
-    negative ``rand_size``, a time outside 0 to 2**48 - 1, and a byte source
-    that returns the wrong number of bytes. Raises ``TypeError`` for an
-    argument of the wrong type, ``bool`` included where an ``int`` is asked
-    for, and for a byte source that does not return bytes.
+    width, ``compact_time_out_of_range`` for a compact time whose first
+    character would be the deterministic marker (the low 40 bits of the time
+    at or above 31 x 2**35, the last thirty-second of every 2**40 millisecond
+    window; in the current window, from mid-2038 until it rolls over in
+    2039), and ``rand_with_from`` for ``rand`` given with ``from_``. Raises a
+    plain ``ValueError`` for any other value it refuses: an unknown size or
+    case, an empty delimiter, a negative ``rand_size``, a time outside 0 to
+    2**48 - 1, a byte source that returns the wrong number of bytes, and, for
+    a deterministic id, a prefix or ``from_`` that has no UTF-8 form (one
+    holding a lone surrogate). Raises ``TypeError`` for an argument of the
+    wrong type, ``bool`` included where an ``int`` is asked for, and for a
+    byte source that does not return bytes.
     """
-    _check_types(prefix, rand_size, compact_time, delimiter, time, rand, byte_source)
+    _check_types(
+        prefix, rand_size, compact_time, delimiter, time, rand, byte_source, from_
+    )
+    if from_ is not None and rand is not None:
+        raise UXIDError(
+            "rand_with_from",
+            "rand: cannot be given with from_: a deterministic body has no"
+            " random field",
+        )
     canonical = _canonical_size(size)
     alphabet = _alphabet(case)
     if not delimiter:
         raise ValueError("delimiter: must be a non-empty string")
+    if from_ is not None:
+        body = _deterministic_body(prefix, from_, canonical, alphabet)
+        return f"{prefix}{delimiter}{body}" if prefix else body
     millis = _now_millis() if time is None else time
     if not 0 <= millis <= _MAX_TIME:
         raise ValueError(
@@ -167,6 +211,7 @@ def _check_types(
     time: object,
     rand: object,
     byte_source: object,
+    from_: object,
 ) -> None:
     """Raise ``TypeError`` for an argument of the wrong type."""
     if not isinstance(prefix, str):
@@ -183,6 +228,8 @@ def _check_types(
         raise TypeError(f"rand: must be bytes or None, got {rand!r}")
     if not callable(byte_source):
         raise TypeError(f"byte_source: must be callable, got {byte_source!r}")
+    if from_ is not None and not isinstance(from_, str):
+        raise TypeError(f"from_: must be a str or None, got {from_!r}")
 
 
 def _is_int(value: object) -> bool:
@@ -226,6 +273,33 @@ def _width(size: str, compact_time: bool, rand_size: int | None) -> int:
             f"rand_size: must be at most {_MAX_RAND_BYTES} bytes, got {rand_size}",
         )
     return rand_size
+
+
+def _deterministic_body(prefix: str, from_: str, size: str, alphabet: str) -> str:
+    """The marker, then the first 5 x count bits of the hash input's SHA-256."""
+    count = _HASH_CHARS[size]
+    data = b"".join(
+        [
+            _utf8("prefix", prefix),
+            b"\x00",
+            _utf8("from_", from_),
+            b"\x00",
+            bytes([count]),
+        ]
+    )
+    digest = int.from_bytes(hashlib.sha256(data).digest(), "big")
+    hash_bits = digest >> (256 - 5 * count)
+    return alphabet[_MARKER] + encode_integer(hash_bits, count, alphabet)
+
+
+def _utf8(name: str, text: str) -> bytes:
+    """The UTF-8 bytes of ``text``, the value of the argument ``name``."""
+    try:
+        return text.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError(
+            f"{name}: must have a UTF-8 form for a deterministic id, got {text!r}"
+        ) from None
 
 
 def _now_millis() -> int:
