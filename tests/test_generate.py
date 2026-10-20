@@ -1,7 +1,10 @@
 """Tests for uxid.generate."""
 
+import ast
 import doctest
+import hashlib
 import inspect
+import itertools
 import pickle
 import secrets
 import time
@@ -181,7 +184,80 @@ REFUSAL_CASES: list[tuple[str, dict[str, Any], str]] = [
         {"prefix": "usr", "size": "xl", "rand_size": 11},
         "rand_size_too_large",
     ),
+    (
+        "invalid/generate-rand-with-from",
+        {"from": "alice@example.com", "prefix": "usr", "rand": "00010203040506070809"},
+        "rand_with_from",
+    ),
 ]
+
+# Deterministic cases copied from the corpus's deterministic.json at v2.10.0.
+DETERMINISTIC_CASES: list[tuple[str, dict[str, Any], str]] = [
+    (
+        "deterministic/golden-usr-xl",
+        {"prefix": "usr", "from": "alice@example.com", "size": "xl", "case": "lower"},
+        "usr_zcvt7epac0t1ebcsjfyf7cwz25",
+    ),
+    (
+        "deterministic/golden-cus-s",
+        {"prefix": "cus", "from": "acme-corp", "size": "s", "case": "lower"},
+        "cus_zt9vnyfd85bff0",
+    ),
+    (
+        "deterministic/golden-no-prefix-m",
+        {"prefix": None, "from": "alice@example.com", "size": "m", "case": "lower"},
+        "zqz4cwzgyw8ks97869",
+    ),
+    (
+        "deterministic/usr-xs",
+        {"prefix": "usr", "from": "alice@example.com", "size": "xs", "case": "lower"},
+        "usr_z1yhw20vag",
+    ),
+    (
+        "deterministic/usr-s",
+        {"prefix": "usr", "from": "alice@example.com", "size": "s", "case": "lower"},
+        "usr_z5rtsrkhx2h4dr",
+    ),
+    (
+        "deterministic/usr-m",
+        {"prefix": "usr", "from": "alice@example.com", "size": "m", "case": "lower"},
+        "usr_zt8naccefxhwnrmscd",
+    ),
+    (
+        "deterministic/usr-l",
+        {"prefix": "usr", "from": "alice@example.com", "size": "l", "case": "lower"},
+        "usr_zwbz6myvgz7ehe3nceap5n",
+    ),
+    (
+        "deterministic/usr-xl",
+        {"prefix": "usr", "from": "alice@example.com", "size": "xl", "case": "lower"},
+        "usr_zcvt7epac0t1ebcsjfyf7cwz25",
+    ),
+    (
+        "deterministic/empty-prefix-xl",
+        {"prefix": "", "from": "alice@example.com", "size": "xl", "case": "lower"},
+        "z4krgegf6drn563pvqhya4tsx9",
+    ),
+    (
+        "deterministic/no-prefix-xl",
+        {"prefix": None, "from": "alice@example.com", "size": "xl", "case": "lower"},
+        "z4krgegf6drn563pvqhya4tsx9",
+    ),
+    (
+        "deterministic/usr-xl-upper",
+        {"prefix": "usr", "from": "alice@example.com", "size": "xl", "case": "upper"},
+        "usr_ZCVT7EPAC0T1EBCSJFYF7CWZ25",
+    ),
+    (
+        "deterministic/non-ascii-from-m",
+        {"prefix": "cus", "from": "caf\u00e9", "size": "m", "case": "lower"},
+        "cus_zfsx9se75671f9kdjv",
+    ),
+]
+
+# The hash characters of a deterministic body per size, from the wire-format
+# spec's table.
+HASH_CHARS = {"xs": 9, "s": 13, "m": 17, "l": 21, "xl": 25}
 
 
 def no_source(count: int) -> bytes:
@@ -201,7 +277,24 @@ def call(case_input: dict[str, Any]) -> str:
         kwargs["compact_time"] = case_input["compact"]
     if "rand" in case_input:
         kwargs["rand"] = bytes.fromhex(case_input["rand"])
+    if "from" in case_input:
+        kwargs["from_"] = case_input["from"]
     return uxid.generate(byte_source=no_source, **kwargs)
+
+
+def spec_body(prefix: str, from_: str, size: str, upper: bool = False) -> str:
+    """A deterministic body built from the spec's steps, one bit at a time.
+
+    A second reading of the layout, written apart from the library's: the
+    hash input, its SHA-256, then the first count x 5 bits as a bit string
+    cut into 5-bit groups behind the marker.
+    """
+    count = HASH_CHARS[size]
+    data = prefix.encode() + b"\x00" + from_.encode() + b"\x00" + bytes([count])
+    bits = "".join(f"{byte:08b}" for byte in hashlib.sha256(data).digest())
+    groups = [int(bits[i : i + 5], 2) for i in range(0, count * 5, 5)]
+    alphabet = LOWER.upper() if upper else LOWER
+    return alphabet[31] + "".join(alphabet[g] for g in groups)
 
 
 def decode_standard_time(body: str) -> int:
@@ -230,6 +323,114 @@ def test_corpus_generate_refusals(case_input: dict[str, Any], code: str) -> None
     with pytest.raises(uxid.UXIDError) as refused:
         call(case_input)
     assert refused.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("case_input", "expected"),
+    [pytest.param(i, e, id=c) for c, i, e in DETERMINISTIC_CASES],
+)
+# sabotage: dropping the zero byte between prefix and from fails these cases
+def test_corpus_deterministic_cases(case_input: dict[str, Any], expected: str) -> None:
+    assert call(case_input) == expected
+
+
+@pytest.mark.parametrize("size", ["xs", "s", "m", "l", "xl"])
+# sabotage: taking the last count x 5 bits of the digest instead of the first fails it
+def test_a_deterministic_body_is_the_marker_and_the_first_hash_bits(
+    size: uxid.Size,
+) -> None:
+    for prefix, from_ in [("usr", "alice@example.com"), ("", "x"), ("cus", "")]:
+        id_ = uxid.generate(prefix=prefix, from_=from_, size=size)
+        assert id_ == (f"{prefix}_" if prefix else "") + spec_body(prefix, from_, size)
+        body = id_.removeprefix(f"{prefix}_")
+        assert len(body) == HASH_CHARS[size] + 1
+        upper = uxid.generate(prefix=prefix, from_=from_, size=size, case="upper")
+        assert upper == (f"{prefix}_" if prefix else "") + spec_body(
+            prefix, from_, size, upper=True
+        )
+
+
+# sabotage: leaving the count byte out of the hash input fails it
+def test_the_size_and_the_prefix_are_in_the_hash_input() -> None:
+    bodies = [
+        uxid.generate(from_="alice@example.com", size=size)[1:]
+        for size in ("xs", "s", "m", "l", "xl")
+    ]
+    for shorter, longer in itertools.pairwise(bodies):
+        assert not longer.startswith(shorter)
+    usr = uxid.generate(prefix="usr", from_="alice@example.com")
+    cus = uxid.generate(prefix="cus", from_="alice@example.com")
+    assert usr[4:] != cus[4:]
+
+
+# sabotage: hashing the upper-cased from for an upper-case id fails it
+def test_case_changes_only_the_spelling_of_a_deterministic_body() -> None:
+    lower = uxid.generate(prefix="Usr", from_="alice@example.com", size="s")
+    upper = uxid.generate(
+        prefix="Usr", from_="alice@example.com", size="s", case="upper"
+    )
+    assert upper.startswith("Usr_Z")
+    assert lower.startswith("Usr_z")
+    assert upper == "Usr_" + lower[4:].upper()
+
+
+# sabotage: dropping the empty-string check (an empty from read as no from) fails it
+def test_an_empty_from_is_a_deterministic_id_and_none_is_not() -> None:
+    assert uxid.generate(from_="", size="s") == spec_body("", "", "s")
+    assert uxid.generate(from_=None, size="xs", time=T) == "01hf7yat00"
+
+
+# sabotage: folding a given time into the hash input fails it
+def test_a_deterministic_id_reads_no_time_or_random_options() -> None:
+    expected = uxid.generate(prefix="usr", from_="alice@example.com", size="s")
+    ignored: list[dict[str, Any]] = [
+        {"time": 0},
+        {"time": -1},
+        {"time": 1 << 48},
+        {"compact_time": True, "time": 31 * (1 << 35)},
+        {"rand_size": 0},
+        {"rand_size": 11},
+        {"rand_size": -1},
+    ]
+    for kwargs in ignored:
+        assert (
+            uxid.generate(
+                prefix="usr",
+                from_="alice@example.com",
+                size="s",
+                byte_source=no_source,
+                **kwargs,
+            )
+            == expected
+        )
+
+
+# sabotage: refusing rand with from only when rand is non-empty fails it
+def test_rand_with_from_is_refused_whatever_its_width() -> None:
+    cases: list[tuple[uxid.Size, bytes]] = [
+        ("xs", b""),
+        ("s", b"\x01\x23"),
+        ("xl", bytes(10)),
+    ]
+    for size, rand in cases:
+        with pytest.raises(uxid.UXIDError) as refused:
+            uxid.generate(from_="x", size=size, rand=rand)
+        assert refused.value.code == "rand_with_from"
+
+
+# sabotage: writing the marker as x (value 29) fails it
+def test_a_deterministic_id_sorts_after_every_time_based_id() -> None:
+    deterministic = uxid.generate(prefix="usr", from_="", size="xs")
+    latest = uxid.generate(prefix="usr", size="xs", time=(1 << 48) - 1)
+    compact = uxid.generate(
+        prefix="usr",
+        size="xs",
+        compact_time=True,
+        time=31 * (1 << 35) - 1,
+        rand=b"\xff",
+    )
+    assert latest < deterministic
+    assert compact < deterministic
 
 
 # sabotage: swapping j and k in the lower-case alphabet fails it
@@ -352,14 +553,72 @@ def test_the_default_byte_source_is_secrets_token_bytes() -> None:
     assert first != second
 
 
-# sabotage: adding "import random" to the generate module fails it
+def random_imports(source: str) -> list[str]:
+    """Every import of the ``random`` module in ``source``, however it is spelt."""
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""]
+        elif isinstance(node, ast.Call) and node.args:
+            first = node.args[0]
+            names = (
+                [first.value]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str)
+                else []
+            )
+            func = node.func
+            callee = func.attr if isinstance(func, ast.Attribute) else ""
+            callee = func.id if isinstance(func, ast.Name) else callee
+            if callee not in ("__import__", "import_module"):
+                names = []
+        else:
+            names = []
+        found += [n for n in names if n == "random" or n.startswith("random.")]
+    return found
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "import random",
+        "import os, random",
+        "import random as r",
+        "import random.x",
+        "from random import randbytes",
+        "from random import randbytes as rb",
+        "if True:\n    from random import randbytes",
+        "r = __import__('random')",
+        "import importlib\nr = importlib.import_module('random')",
+    ],
+)
+# sabotage: dropping the ast.ImportFrom branch from random_imports fails it
+def test_the_random_import_scan_reads_every_spelling(spelling: str) -> None:
+    assert random_imports(spelling)
+    assert not random_imports("import secrets\nfrom secrets import token_bytes")
+
+
+# sabotage: adding "import os, random" to the generate module fails it
 def test_the_library_source_never_imports_random() -> None:
     source_dir = Path(uxid._generate.__file__).parent
-    for path in sorted(source_dir.glob("*.py")):
-        for line in path.read_text().splitlines():
-            words = line.split()
-            assert words[:2] != ["import", "random"], path
-            assert words[:2] != ["from", "random"], path
+    paths = sorted(source_dir.glob("*.py"))
+    assert paths
+    for path in paths:
+        assert random_imports(path.read_text()) == [], path
+
+
+# sabotage: making _SIZES a plain dict fails it
+def test_the_size_tables_are_immutable() -> None:
+    tables: list[Any] = [
+        uxid._generate._SIZES,
+        uxid._generate._RAND_BYTES,
+        uxid._generate._HASH_CHARS,
+    ]
+    for table in tables:
+        with pytest.raises(TypeError):
+            table["xs"] = table["xs"]
+    assert dict(uxid._generate._HASH_CHARS) == HASH_CHARS
 
 
 # sabotage: reading the clock in seconds instead of milliseconds fails it
@@ -405,6 +664,17 @@ def test_a_refusal_pickles_with_its_code() -> None:
         pytest.param({"case": "title"}, "case", id="unknown-case"),
         pytest.param({"delimiter": ""}, "delimiter", id="empty-delimiter"),
         pytest.param({"rand_size": -1}, "rand_size", id="negative-rand-size"),
+        pytest.param({"from_": "\udc80"}, "from_", id="from-lone-surrogate"),
+        pytest.param(
+            {"from_": "x", "prefix": "\ud800"},
+            "prefix",
+            id="from-prefix-lone-surrogate",
+        ),
+        pytest.param({"from_": "x", "size": "huge"}, "size", id="from-unknown-size"),
+        pytest.param({"from_": "x", "case": "title"}, "case", id="from-unknown-case"),
+        pytest.param(
+            {"from_": "x", "delimiter": ""}, "delimiter", id="from-empty-delim"
+        ),
         pytest.param({"time": -1}, "time", id="time-before-the-epoch"),
         pytest.param({"time": 1 << 48}, "time", id="time-above-48-bits"),
         pytest.param(
@@ -447,6 +717,10 @@ def test_other_values_raise_a_plain_value_error(
         pytest.param({"byte_source": None}, id="source-none"),
         pytest.param({"byte_source": lambda n: "x" * n}, id="source-returns-str"),
         pytest.param({"byte_source": bytearray}, id="source-returns-bytearray"),
+        pytest.param({"from_": b"alice@example.com"}, id="from-bytes"),
+        pytest.param({"from_": 1}, id="from-int"),
+        pytest.param({"from_": bytearray(b"x")}, id="from-bytearray"),
+        pytest.param({"from_": "x", "time": 1.5}, id="from-time-float"),
     ],
 )
 # sabotage: dropping the bool exclusion for time, or taking a bytearray rand, fails it
@@ -492,5 +766,6 @@ def test_the_public_surface() -> None:
         "__version__",
         "generate",
     ]
-    parameters = inspect.signature(uxid.generate).parameters.values()
-    assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in parameters)
+    parameters = inspect.signature(uxid.generate).parameters
+    assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in parameters.values())
+    assert parameters["from_"].default is None
