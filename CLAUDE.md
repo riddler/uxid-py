@@ -138,12 +138,14 @@ Elixir reference `uxid` and checked against its conformance corpus. It covers
 generation (random, deterministic and monotonic), decoding and the validity
 checks; it has no runtime dependencies, takes its random bytes from
 `secrets.token_bytes` by default, and runs on Python 3.11 or later. The 2020
-code is gone from `main`; the tree is a `src/uxid` package that carries only
-`__version__` (read from the installed package metadata), a `py.typed` marker
-and one test, with `pyproject.toml`, `uv.lock` and `mise.toml` beside them.
-The library, CI and the vendored corpus arrive with later changes; until they
-do, the sentences in this file about the 1.0.0 package, its corpus and its
-workflows describe the target, not the current tree.
+code is gone from `main`; the tree is a `src/uxid` package that carries
+`generate` (time-based ids, with an injectable byte source), its refusal
+`UXIDError`, `__version__` (read from the installed package metadata) and a
+`py.typed` marker, with its tests under `tests/` and `pyproject.toml`,
+`uv.lock` and `mise.toml` beside them. Deterministic and monotonic generation,
+decoding, the validity checks, CI and the vendored corpus arrive with later
+changes; until they do, the sentences in this file about the 1.0.0 package,
+its corpus and its workflows describe the target, not the current tree.
 
 - **The package is `uxid`.** Version 1.0.0 replaces the 2020 0.0.1
   placeholder on PyPI under the same project name, and its import name is

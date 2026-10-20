@@ -1,7 +1,29 @@
-"""Prefixed, K-sortable, human-readable identifiers."""
+"""Prefixed, K-sortable, human-readable identifiers.
+
+``uxid`` makes ids such as ``usr_01hf7yat0004hmasw9nf6yy093``: an optional
+prefix, a delimiter, and a body that starts with a millisecond time and ends
+with random bytes, in Crockford Base32. It follows the wire format of the
+Elixir ``uxid`` package (uxid-ex's ``guides/wire-format.md``), so the two
+produce the same strings for the same inputs.
+
+>>> import uxid
+>>> uxid.generate(prefix="usr", size="xs", time=1_700_000_000_000)
+'usr_01hf7yat00'
+"""
 
 from importlib.metadata import version
 
+from uxid._errors import ErrorCode, UXIDError
+from uxid._generate import ByteSource, Case, Size, generate
+
 __version__ = version("uxid")
 
-__all__ = ["__version__"]
+__all__ = [
+    "ByteSource",
+    "Case",
+    "ErrorCode",
+    "Size",
+    "UXIDError",
+    "__version__",
+    "generate",
+]
