@@ -9,10 +9,19 @@
 # supports, while the interpreter that gates it is this one. The tools
 # (pytest, pytest-cov, ruff, mypy) come from the uv dev group and uv.lock,
 # and run through `uv run`.
+#
+# UV_PYTHON below points uv at the interpreter mise installs for the pin.
+# Without it uv chooses by its own rules, which by default prefer a Python
+# uv installed itself over one on PATH, so the gate could run on any Python
+# that satisfies requires-python rather than the pinned one. CI tests the
+# other supported minors (.github/workflows/ci.yml).
 
 [tools]
 python = "3.14"
 uv = "0.13.1"
+
+[env]
+UV_PYTHON = { value = "{{ tools.python.path }}/bin/python3", tools = true }
 
 [tasks."gate:format"]
 description = "Check formatting"

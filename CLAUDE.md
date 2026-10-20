@@ -95,14 +95,14 @@ tag. The README's install line, once the rewrite's README carries one, is
 a session never uploads to PyPI: the release workflow
 (`.github/workflows/release.yml`, the file the release publishes from)
 publishes on that tag push, and a failed workflow is re-run from its Actions
-page, never worked round by a local publish. That workflow arrives with a
-later change; until it is on `main`, nothing publishes this package. PyPI
-accepts that workflow's publish only once the `uxid` project's settings on
-PyPI name this repository and that workflow file as its trusted publisher, a
-step in the PyPI console that is the operator's. Merging the prep follows
-this file's merge row, and nothing else this file reserves for the operator
-changes. A prep is cut only on a green full gate, which includes the
-conformance corpus check.
+page, never worked round by a local publish. The workflow's header records
+what each of its steps checks and what a failure before or after the upload
+means. PyPI accepts that workflow's publish only once the `uxid` project's
+settings on PyPI name this repository and that workflow file as its trusted
+publisher, a step in the PyPI console that is the operator's. Merging the
+prep follows this file's merge row, and nothing else this file reserves for
+the operator changes. A prep is cut only on a green full gate, which includes
+the conformance corpus check.
 
 This repository keeps no decision records (`docs/adr`). A release or gating
 decision is recorded here, in the authority table and the Release preps
@@ -149,10 +149,13 @@ instance, with an injectable byte source or `Draws`), `__version__` (read
 from the installed package metadata) and a `py.typed` marker, with its tests
 under `tests/` and `pyproject.toml`, `uv.lock` and `mise.toml` beside them,
 and the conformance corpus under `conformance/` with its check
-(`scripts/check_corpus.py`) and its runner (`tests/test_conformance.py`). CI
-arrives with a later change; until it does, the sentences in this file about
-the 1.0.0 package and its workflows describe the target, not the current
-tree.
+(`scripts/check_corpus.py`) and its runner (`tests/test_conformance.py`),
+and the two GitHub Actions workflows: CI (`.github/workflows/ci.yml`) and the
+tag-push release (`.github/workflows/release.yml`, with the checks it runs
+before a build in `scripts/release_guard.py`). The version in
+`pyproject.toml` stays `0.0.1` until the 1.0.0 release prep; until then, the
+sentences in this file about the 1.0.0 package describe the target, not the
+current tree.
 
 - **The package is `uxid`.** Version 1.0.0 replaces the 2020 0.0.1
   placeholder on PyPI under the same project name, and its import name is
@@ -176,7 +179,9 @@ records each release.
 
 The gate tasks live in `mise.toml`; the tools they run (pytest, pytest-cov,
 ruff, mypy) come from the `dev` dependency group in `pyproject.toml`, locked in
-`uv.lock`, and run through `uv run`.
+`uv.lock`, and run through `uv run`. `mise.toml` sets `UV_PYTHON` to the
+interpreter mise installs for its Python pin, so every `uv` command the gate
+runs uses that Python.
 
 ```bash
 mise install            # the Python toolchain and the tools mise.toml pins
@@ -191,6 +196,11 @@ file's case count by the reference's rule and fails on a difference from
 `manifest.json` or `conformance/SOURCE.json`), the tests under pytest with
 coverage measured on lines and branches (failing under 90 percent), the
 corpus runner among them, and `uv build`.
+
+CI (`.github/workflows/ci.yml`) runs the full gate, read from
+`.claude/wurk.json`, on the Python `mise.toml` pins, and the tests on each
+Python minor the package supports, 3.11 through 3.14, on pushes to `main`,
+pull requests and a manual dispatch.
 
 ### This repo's own gate rules
 
@@ -252,7 +262,8 @@ satellite conventions rather than inventing a second set.
   `# sabotage:` comment line directly above the test.
 - Changelog: a change a user of the API could notice adds a fragment under
   `changelog.d/`, named for the bead (`changelog.d/uxpy-abc.md`), in the same
-  request; tests, docs, tooling and gate changes take none. New version
+  request; tests, docs, tooling and gate changes take none
+  (`changelog.d/README.md` states the rule and the format). New version
   sections in `CHANGELOG.md` keep the file's own heading shape; existing
   history is not rewritten.
 - Commit messages: simple present tense ("Adds ...", "Fixes ..."), body
