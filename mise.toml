@@ -1,0 +1,53 @@
+# mise config for uxid-py: the toolchain and the gate tasks.
+#
+#   mise install          provision the toolchain below
+#   mise run gate:loop    inner loop: ruff, pytest
+#   mise run gate         full gate, the advancement gate
+#
+# Python is pinned to one minor release; the package itself declares
+# `requires-python = ">=3.11"` in pyproject.toml, the oldest Python it
+# supports, while the interpreter that gates it is this one. The tools
+# (pytest, pytest-cov, ruff, mypy) come from the uv dev group and uv.lock,
+# and run through `uv run`.
+
+[tools]
+python = "3.14"
+uv = "0.13.1"
+
+[tasks."gate:format"]
+description = "Check formatting"
+run = "uv run --frozen ruff format --check ."
+
+[tasks."gate:lint"]
+description = "Lint"
+run = "uv run --frozen ruff check ."
+
+[tasks."gate:types"]
+description = "Type-check under mypy strict"
+run = "uv run --frozen mypy src tests"
+
+[tasks."gate:test"]
+description = "Test with line and branch coverage, failing under 90 percent"
+run = "uv run --frozen pytest --cov=uxid --cov-branch --cov-report=term-missing --cov-fail-under=90"
+
+[tasks."gate:build"]
+description = "Build the sdist and the wheel"
+run = "uv build --out-dir dist"
+
+[tasks."gate:loop"]
+description = "Inner loop: ruff, pytest"
+run = [
+  { task = "gate:format" },
+  { task = "gate:lint" },
+  "uv run --frozen pytest",
+]
+
+[tasks.gate]
+description = "Full gate"
+run = [
+  { task = "gate:format" },
+  { task = "gate:lint" },
+  { task = "gate:types" },
+  { task = "gate:test" },
+  { task = "gate:build" },
+]

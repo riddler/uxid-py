@@ -138,13 +138,12 @@ Elixir reference `uxid` and checked against its conformance corpus. It covers
 generation (random, deterministic and monotonic), decoding and the validity
 checks; it has no runtime dependencies, takes its random bytes from
 `secrets.token_bytes` by default, and runs on Python 3.11 or later. The 2020
-code on `main` (the `uxid/` package, `setup.py`, the tests under `test/spec/`,
-the Ruby review tooling and the files beside them) is being replaced by that
-rewrite.
-The library, the gate tasks, CI and the vendored corpus arrive with later
-changes; until they do, the sentences in this file about the 1.0.0 package,
-its corpus, its gate and its workflows describe the target, not the current
-tree.
+code is gone from `main`; the tree is a `src/uxid` package that carries only
+`__version__` (read from the installed package metadata), a `py.typed` marker
+and one test, with `pyproject.toml`, `uv.lock` and `mise.toml` beside them.
+The library, CI and the vendored corpus arrive with later changes; until they
+do, the sentences in this file about the 1.0.0 package, its corpus and its
+workflows describe the target, not the current tree.
 
 - **The package is `uxid`.** Version 1.0.0 replaces the 2020 0.0.1
   placeholder on PyPI under the same project name, and its import name is
@@ -156,13 +155,14 @@ tree.
   against uxid-ex with its evidence, never skipped or worked round here. An
   answer the corpus does not fix follows uxid-ex's spec at that tag.
 
-`README.md` is the user reference; `CHANGELOG.md`, which the rewrite adds,
+`README.md` is the user reference; `CHANGELOG.md`
 records each release.
 
 ## Build & Test
 
-The gate tasks live in `mise.toml`, which the rewrite adds; on a tree without
-it these commands do not run yet.
+The gate tasks live in `mise.toml`; the tools they run (pytest, pytest-cov,
+ruff, mypy) come from the `dev` dependency group in `pyproject.toml`, locked in
+`uv.lock`, and run through `uv run`.
 
 ```bash
 mise install            # the Python toolchain and the tools mise.toml pins
@@ -170,10 +170,10 @@ mise run gate:loop      # inner loop
 mise run gate           # full gate
 ```
 
-Once the change that adds the gate tasks lands, the full gate will run
-`ruff format --check`, `ruff check`, `mypy --strict`, the tests under pytest
-with coverage measured on lines and branches, the conformance corpus check
-once the corpus is vendored, and `uv build`.
+The full gate runs `ruff format --check`, `ruff check`, `mypy --strict` over
+`src` and `tests`, the tests under pytest with coverage measured on lines and
+branches (failing under 90 percent), and `uv build`; the conformance corpus
+check joins it once the corpus is vendored.
 
 ### This repo's own gate rules
 
