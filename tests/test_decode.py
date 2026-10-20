@@ -238,9 +238,14 @@ def test_the_clock_window_end_is_exclusive() -> None:
             assert fields(uxid.decode(id_, now=now)) == expected, (case, now)
 
 
-# sabotage: dropping the time >= 2**40 condition (a negative time) fails it
-def test_a_compact_time_in_the_first_window_never_goes_below_zero() -> None:
-    assert fields(uxid.decode("usr_yzzzzzzz04hm5", now=0))[4] == 1_065_151_889_407
+# sabotage: subtracting the window only when the result stays at or above 0 fails it
+def test_a_compact_time_ahead_of_a_first_window_clock_is_negative() -> None:
+    # The spec subtracts 2**40 from any result more than a day ahead of the
+    # clock, with no exception for the first window after the Unix epoch.
+    assert fields(uxid.decode("usr_yzzzzzzz04hm5", now=0))[4] == (
+        1_065_151_889_407 - (1 << 40)
+    )
+    assert fields(uxid.decode("usr_yzzzzzzz04hm5", now=0))[4] == -34_359_738_369
     assert fields(uxid.decode("usr_0000000500000", now=0))[4] == 5
 
 

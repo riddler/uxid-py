@@ -89,7 +89,10 @@ class Decoded:
     time: int | None
     """The time in milliseconds since the Unix epoch, or ``None`` for a
     deterministic body, which carries none. A compact time's high bits come
-    from the decoder's clock, ``uxid.decode``'s ``now``."""
+    from the decoder's clock, ``uxid.decode``'s ``now``, and it can be
+    negative: a compact time more than a day ahead of a clock in the first
+    2**40 ms window after the Unix epoch is read as one from the window
+    before it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,8 +144,8 @@ def decode(
 
     A compact body carries only the low 40 bits of its time; the high bits are
     the clock's, less one 2**40 millisecond window when the result would be
-    more than one day (86400000 ms) ahead of the clock and a window before it
-    exists. So the time comes back exact while the id and the clock fall in
+    more than one day (86400000 ms) ahead of the clock, even when that makes
+    the time negative. So the time comes back exact while the id and the clock fall in
     the same 2**40 ms window (about 34.8 years) and the id is no more than one
     day ahead of the clock.
 
@@ -309,11 +312,11 @@ def _compact_time(low: int, now: int) -> int:
     """The low 40 bits from the id and the high bits from the clock ``now``.
 
     A result more than a day ahead of the clock is from the window before,
-    when there is one: in the first window after the Unix epoch the time
-    stays in ``now``'s window, never below 0.
+    with no exception: in the first window after the Unix epoch that time is
+    negative.
     """
     time = ((now >> 40) << 40) | low
-    if time - now > _ONE_DAY and time >= _COMPACT_WINDOW:
+    if time - now > _ONE_DAY:
         return time - _COMPACT_WINDOW
     return time
 
