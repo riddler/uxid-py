@@ -131,9 +131,9 @@ Also avoid `bd edit`, which opens `$EDITOR` and blocks. Use
 
 ## What this project is
 
-`uxid` for Python. Version 1.0.0, the package this repository is being
-rewritten into, makes prefixed, K-sortable, Stripe-style identifiers a person
-can read, copy and route back to their resource, wire-compatible with the
+`uxid` for Python. Version 1.0.0, the rewrite of the 2020
+placeholder, makes prefixed, K-sortable, Stripe-style identifiers a person can
+read, copy and route back to their resource, wire-compatible with the
 Elixir reference `uxid` and checked against its conformance corpus. It covers
 generation (random, deterministic and monotonic), decoding and the validity
 checks; it has no runtime dependencies, takes its random bytes from
@@ -153,9 +153,8 @@ and the conformance corpus under `conformance/` with its check
 and the two GitHub Actions workflows: CI (`.github/workflows/ci.yml`) and the
 tag-push release (`.github/workflows/release.yml`, with the checks it runs
 before a build in `scripts/release_guard.py`). The version in
-`pyproject.toml` stays `0.0.1` until the 1.0.0 release prep; until then, the
-sentences in this file about the 1.0.0 package describe the target, not the
-current tree.
+`pyproject.toml` is `1.0.0`, the version the release workflow publishes once
+the tag `v1.0.0` is pushed.
 
 - **The package is `uxid`.** Version 1.0.0 replaces the 2020 0.0.1
   placeholder on PyPI under the same project name, and its import name is
