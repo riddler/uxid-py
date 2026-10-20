@@ -172,8 +172,13 @@ current tree.
   mismatch is never repaired by rewriting a hash. An answer the corpus does
   not fix follows uxid-ex's spec at that tag.
 
-`README.md` is the user reference; `CHANGELOG.md`
-records each release.
+`README.md` is the user reference (what, why, install, one basic-usage block,
+upgrading from 0.0.1, compatibility, documentation); its Python blocks run in
+`tests/test_readme.py`, which also checks that every public function, class
+and method has a docstring. `docs/wire-format.md` points at the reference spec
+at the tag `conformance/SOURCE.json` names; a corpus bump at a new tag
+updates it and the README's reference links in the same change.
+`CHANGELOG.md` records each release.
 
 ## Build & Test
 
