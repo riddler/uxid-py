@@ -11,6 +11,7 @@ import pytest
 
 import uxid
 import uxid._decode
+from _corpus import cases
 
 T = 1_700_000_000_000
 LOWER = "0123456789abcdefghjkmnpqrstvwxyz"
@@ -21,130 +22,8 @@ LOWER = "0123456789abcdefghjkmnpqrstvwxyz"
 WINDOW_START = 1_699_913_600_000
 WINDOW_END = 2_164_577_117_183
 
-# Decode cases copied from uxid-ex's conformance corpus at v2.10.0
-# (conformance/decode.json), each with its case id, until the corpus is
-# vendored and run whole. Each expected tuple is the prefix, size, compact
-# flag, deterministic flag and time; a corpus prefix of null is None.
-DECODE_CASES: list[tuple[str, str, tuple[str | None, str, bool, bool, int | None]]] = [
-    (
-        "decode/xl-standard",
-        "usr_01hf7yat0004hmasw9nf6yy093",
-        ("usr", "xl", False, False, T),
-    ),
-    (
-        "decode/xl-compact",
-        "usr_hf7yat0004hmasw9nf6yy093",
-        ("usr", "xl", True, False, T),
-    ),
-    ("decode/l-standard", "usr_01hf7yat0004hmasw9nf61", ("usr", "l", False, False, T)),
-    ("decode/l-compact", "usr_hf7yat0004hmasw9nf6yf", ("usr", "l", True, False, T)),
-    ("decode/m-standard", "usr_01hf7yat0004hmasw9", ("usr", "m", False, False, T)),
-    (
-        "decode/m-compact-reads-as-standard",
-        "usr_hf7yat0004hmasw9n3",
-        ("usr", "m", False, False, 51_950_139_736_068),
-    ),
-    ("decode/s-standard", "usr_01hf7yat0004h1", ("usr", "s", False, False, T)),
-    ("decode/s-compact", "usr_hf7yat0004hm5", ("usr", "s", True, False, T)),
-    ("decode/xs-standard", "usr_01hf7yat00", ("usr", "xs", False, False, T)),
-    (
-        "decode/xs-compact-reads-as-standard",
-        "usr_hf7yat0001",
-        ("usr", "xs", False, False, 51_950_139_736_065),
-    ),
-    (
-        "decode/xl-standard-upper",
-        "usr_01HF7YAT0004HMASW9NF6YY093",
-        ("usr", "xl", False, False, T),
-    ),
-    (
-        "decode/xl-standard-no-prefix",
-        "01hf7yat0004hmasw9nf6yy093",
-        (None, "xl", False, False, T),
-    ),
-    (
-        "decode/s-standard-prefix-with-delimiter",
-        "a_b_01hf7yat000001",
-        ("a_b", "s", False, False, T),
-    ),
-    (
-        "decode/s-compact-guard-last-valid",
-        "usr_yzzzzzzz04hm5",
-        ("usr", "s", True, False, 1_065_151_889_407),
-    ),
-    (
-        "decode/deterministic-usr-xl",
-        "usr_zcvt7epac0t1ebcsjfyf7cwz25",
-        ("usr", "xl", False, True, None),
-    ),
-    (
-        "decode/deterministic-cus-s",
-        "cus_zt9vnyfd85bff0",
-        ("cus", "s", False, True, None),
-    ),
-    (
-        "decode/deterministic-no-prefix-m",
-        "zqz4cwzgyw8ks97869",
-        (None, "m", False, True, None),
-    ),
-    (
-        "decode/deterministic-upper-marker",
-        "usr_ZCVT7EPAC0T1EBCSJFYF7CWZ25",
-        ("usr", "xl", False, True, None),
-    ),
-]
-
-# The decode refusals of uxid-ex's conformance corpus at v2.10.0
-# (conformance/invalid.json, the cases whose input is decode), each with its
-# case id and the reason it names.
-INVALID_CASES: list[tuple[str, str, str]] = [
-    ("invalid/decode-empty-string", "", "empty"),
-    ("invalid/decode-ends-in-delimiter", "usr_", "empty"),
-    ("invalid/decode-prefix-with-delimiter-ends-in-delimiter", "a_b_", "empty"),
-    ("invalid/decode-delimiter-only", "_", "empty"),
-    ("invalid/decode-length-11", "usr_01hf7yat000", "invalid_length"),
-    ("invalid/decode-length-25", "usr_01hf7yat00000g40r40m30e20", "invalid_length"),
-    ("invalid/decode-length-27", "usr_01hf7yat00000g40r40m30e2090", "invalid_length"),
-    ("invalid/decode-no-delimiter-short", "usr", "invalid_length"),
-    (
-        "invalid/decode-character-in-time",
-        "usr_01hu7yat00000g40r40m30e209",
-        "invalid_character",
-    ),
-    (
-        "invalid/decode-character-in-random",
-        "usr_01hf7yat00000g4lr40m30e209",
-        "invalid_character",
-    ),
-    (
-        "invalid/decode-upper-o-in-random",
-        "usr_01hf7yat00000g40r40mO0e209",
-        "invalid_character",
-    ),
-    (
-        "invalid/decode-hyphen-in-body",
-        "usr_01hf7yat00-00g40r40m30e209",
-        "invalid_character",
-    ),
-    (
-        "invalid/decode-character-in-deterministic",
-        "usr_zcvt7epac0t1ebcsjfyf7cwzi5",
-        "invalid_character",
-    ),
-    (
-        "invalid/decode-non-ascii-table-length",
-        "01hf7yat00000g40r40m30e2é",
-        "invalid_character",
-    ),
-    (
-        "invalid/decode-non-ascii-off-table-length",
-        "01hf7yat00000g40r40m30e20é",
-        "invalid_length",
-    ),
-    ("invalid/decode-length-and-character", "usr_01hf7yat00u", "invalid_length"),
-]
-
-VALID_IDS = [id_ for _, id_, _ in DECODE_CASES]
+# The well-formed ids of the vendored corpus's decode cases.
+VALID_IDS = [case["input"] for case in cases("decode")]
 
 
 def fields(decoded: uxid.Decoded | uxid.Invalid) -> tuple[Any, ...]:
@@ -157,28 +36,6 @@ def fields(decoded: uxid.Decoded | uxid.Invalid) -> tuple[Any, ...]:
         decoded.deterministic,
         decoded.time,
     )
-
-
-@pytest.mark.parametrize(
-    ("id_", "expected"),
-    [pytest.param(i, e, id=case) for case, i, e in DECODE_CASES],
-)
-# sabotage: reading the standard time's low nine symbols from body[0:9] fails these
-def test_corpus_decode_cases(
-    id_: str, expected: tuple[str | None, str, bool, bool, int | None]
-) -> None:
-    assert fields(uxid.decode(id_, now=T)) == expected
-
-
-@pytest.mark.parametrize(
-    ("id_", "reason"),
-    [pytest.param(i, r, id=case) for case, i, r in INVALID_CASES],
-)
-# sabotage: counting the body length in characters instead of UTF-8 bytes fails these
-def test_corpus_decode_refusals(id_: str, reason: str) -> None:
-    assert uxid.decode(id_, now=T) == uxid.Invalid(typing.cast(Any, reason))
-    assert not uxid.is_valid(id_)
-    assert not uxid.is_deterministic(id_)
 
 
 # sabotage: checking the alphabet before the length fails it
@@ -233,9 +90,6 @@ def test_the_clock_window_end_is_exclusive() -> None:
     # At the end the result is exactly one day ahead, not more, so it stays in
     # the clock's window and is no longer the case's time.
     assert fields(uxid.decode(guard, now=WINDOW_END))[4] == last_valid + (1 << 40)
-    for case, id_, expected in DECODE_CASES:
-        for now in (WINDOW_START, T, WINDOW_END - 1):
-            assert fields(uxid.decode(id_, now=now)) == expected, (case, now)
 
 
 # sabotage: subtracting the window only when the result stays at or above 0 fails it

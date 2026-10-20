@@ -14,111 +14,15 @@ import pytest
 
 import uxid
 import uxid._monotonic
+from _corpus import cases
 
 T = 1_700_000_000_000
 LOWER = "0123456789abcdefghjkmnpqrstvwxyz"
 
-# Monotonic cases copied from uxid-ex's conformance corpus at v2.10.0
-# (conformance/monotonic.json), each with its case id, until the corpus is
-# vendored and run whole. A corpus prefix of null is an absent prefix here.
-MONOTONIC_CASES: list[tuple[str, dict[str, Any], list[str]]] = [
-    (
-        "monotonic/xl-same-millisecond",
-        {
-            "compact": False,
-            "initial_seed": 123456789,
-            "overflow_seed": None,
-            "prefix": "usr",
-            "size": "xl",
-            "steps": [1, 1099511627776, 42],
-            "times": [T, T, T, T],
-        },
-        [
-            "usr_01hf7yat0000000000003nqk8n",
-            "usr_01hf7yat0000000000003nqk8p",
-            "usr_01hf7yat0000000001003nqk8p",
-            "usr_01hf7yat0000000001003nqka0",
-        ],
-    ),
-    (
-        "monotonic/m-clock-moves-back",
-        {
-            "compact": False,
-            "initial_seed": 1000,
-            "overflow_seed": None,
-            "prefix": "usr",
-            "size": "m",
-            "steps": [5, 1048576, 7],
-            "times": [T, T - 1, T - 10, T],
-        },
-        [
-            "usr_01hf7yat00000000z8",
-            "usr_01hf7yat00000000zd",
-            "usr_01hf7yat00000100zd",
-            "usr_01hf7yat00000100zm",
-        ],
-    ),
-    (
-        "monotonic/s-overflow-bumps-time",
-        {
-            "compact": False,
-            "initial_seed": 65000,
-            "overflow_seed": 1234,
-            "prefix": "usr",
-            "size": "s",
-            "steps": [200, 250, 100, 7, 3],
-            "times": [T, T, T, T, T, T + 1],
-        },
-        [
-            "usr_01hf7yat00zqm0",
-            "usr_01hf7yat00ztr0",
-            "usr_01hf7yat00zyn0",
-            "usr_01hf7yat010k90",
-            "usr_01hf7yat010kc1",
-            "usr_01hf7yat010ke0",
-        ],
-    ),
-    (
-        "monotonic/xs-compact-overflow-clock-back",
-        {
-            "compact": True,
-            "initial_seed": 250,
-            "overflow_seed": 9,
-            "prefix": "usr",
-            "size": "xs",
-            "steps": [5, 16],
-            "times": [T, T, T - 1],
-        },
-        ["usr_hf7yat00z2", "usr_hf7yat00z7", "usr_hf7yat0111"],
-    ),
-    (
-        "monotonic/l-compact-single",
-        {
-            "compact": True,
-            "initial_seed": 0,
-            "overflow_seed": None,
-            "prefix": "usr",
-            "size": "l",
-            "steps": [],
-            "times": [T],
-        },
-        ["usr_hf7yat000000000000000"],
-    ),
-    (
-        "monotonic/s-compact-no-prefix-largest-step",
-        {
-            "compact": True,
-            "initial_seed": 0,
-            "overflow_seed": None,
-            "prefix": None,
-            "size": "s",
-            "steps": [4096],
-            "times": [T, T],
-        },
-        ["hf7yat0000000", "hf7yat0000800"],
-    ),
+# The vendored corpus's monotonic cases, as (case id, input, expected ids).
+MONOTONIC_CASES = [
+    (case["id"], case["input"], case["expected"]) for case in cases("monotonic")
 ]
-
 CASE_IDS = [case_id for case_id, _, _ in MONOTONIC_CASES]
 
 # The random width in bytes per size and time form, from the wire format.
@@ -198,20 +102,6 @@ def queue_source(chunks: list[bytes]) -> Callable[[int], bytes]:
         return chunk
 
     return source
-
-
-@pytest.mark.parametrize(
-    ("case_id", "inputs", "expected"), MONOTONIC_CASES, ids=CASE_IDS
-)
-# sabotage: reseeding on a time equal to the last (millis < last time) fails these cases
-def test_the_corpus_monotonic_cases_replay_through_draws(
-    case_id: str, inputs: dict[str, Any], expected: list[str]
-) -> None:
-    draws = Recorded(inputs)
-    ids = generator(inputs, draws=draws)
-    assert [ids.generate(time=t) for t in inputs["times"]] == expected, case_id
-    assert draws.seeds == []
-    assert draws.steps == []
 
 
 @pytest.mark.parametrize(

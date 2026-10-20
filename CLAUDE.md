@@ -101,7 +101,7 @@ accepts that workflow's publish only once the `uxid` project's settings on
 PyPI name this repository and that workflow file as its trusted publisher, a
 step in the PyPI console that is the operator's. Merging the prep follows
 this file's merge row, and nothing else this file reserves for the operator
-changes. A prep is cut only on a green full gate, which will include the
+changes. A prep is cut only on a green full gate, which includes the
 conformance corpus check.
 
 This repository keeps no decision records (`docs/adr`). A release or gating
@@ -110,10 +110,10 @@ paragraph, and in the header of the workflow it governs; a change a user of
 the API could notice is a changelog fragment (Conventions, below). The ID
 format itself is not decided here: it is uxid-ex's wire-format spec,
 `guides/wire-format.md` in https://github.com/riddler/uxid-ex, read at the
-tag the vendored corpus names (`conformance/SOURCE.json`, once the corpus is
-vendored). That this repository keeps no decision records was decided by the
-conductor under a standing consent, 2026-10-20; a future API decision may
-start a `docs/adr` directory.
+tag the vendored corpus names (`conformance/SOURCE.json`). That this
+repository keeps no decision records was decided by the conductor under a
+standing consent, 2026-10-20; a future API decision may start a `docs/adr`
+directory.
 
 Widening this section is a decision for the operator to make and record here.
 An agent may draft the change; it does not adopt it.
@@ -147,20 +147,27 @@ string, with an injectable clock for compact times), the validity checks
 object the caller holds, its state and its `threading.Lock` inside the
 instance, with an injectable byte source or `Draws`), `__version__` (read
 from the installed package metadata) and a `py.typed` marker, with its tests
-under `tests/` and `pyproject.toml`, `uv.lock` and `mise.toml` beside them.
-CI and the vendored corpus arrive with later changes; until they do, the
-sentences in this file about the 1.0.0 package, its corpus and its workflows
-describe the target, not the current tree.
+under `tests/` and `pyproject.toml`, `uv.lock` and `mise.toml` beside them,
+and the conformance corpus under `conformance/` with its check
+(`scripts/check_corpus.py`) and its runner (`tests/test_conformance.py`). CI
+arrives with a later change; until it does, the sentences in this file about
+the 1.0.0 package and its workflows describe the target, not the current
+tree.
 
 - **The package is `uxid`.** Version 1.0.0 replaces the 2020 0.0.1
   placeholder on PyPI under the same project name, and its import name is
   `uxid`: a new package in substance, not an upgrade path from 0.0.1.
-- **The corpus is the arbiter.** `conformance/` will hold the corpus
-  vendored from uxid-ex at a release tag, its tag, commit and hash recorded in
-  `conformance/SOURCE.json`. The vendored files are never edited, and every
-  case passes with no skip list: a case this port cannot pass is reported
-  against uxid-ex with its evidence, never skipped or worked round here. An
-  answer the corpus does not fix follows uxid-ex's spec at that tag.
+- **The corpus is the arbiter.** `conformance/` holds the corpus vendored
+  from uxid-ex at a release tag: its case files, `manifest.json`, `schema/`
+  and `README.md`, each copied byte for byte, with the tag, commit and hash
+  recorded in `conformance/SOURCE.json` (the reference's generator source,
+  its `source/`, is not needed to run the cases and is not vendored). The
+  vendored files are never edited, and every case passes with no skip list:
+  a case this port cannot pass is reported against uxid-ex with its
+  evidence, never skipped or worked round here. A corpus bump copies every
+  file again at the new tag and records that tag in `SOURCE.json`; a hash
+  mismatch is never repaired by rewriting a hash. An answer the corpus does
+  not fix follows uxid-ex's spec at that tag.
 
 `README.md` is the user reference; `CHANGELOG.md`
 records each release.
@@ -178,9 +185,12 @@ mise run gate           # full gate
 ```
 
 The full gate runs `ruff format --check`, `ruff check`, `mypy --strict` over
-`src` and `tests`, the tests under pytest with coverage measured on lines and
-branches (failing under 90 percent), and `uv build`; the conformance corpus
-check joins it once the corpus is vendored.
+`src`, `tests` and `scripts`, the conformance corpus check
+(`scripts/check_corpus.py`, which recomputes the corpus hash and each case
+file's case count by the reference's rule and fails on a difference from
+`manifest.json` or `conformance/SOURCE.json`), the tests under pytest with
+coverage measured on lines and branches (failing under 90 percent), the
+corpus runner among them, and `uv build`.
 
 ### This repo's own gate rules
 

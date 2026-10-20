@@ -1,7 +1,7 @@
 # mise config for uxid-py: the toolchain and the gate tasks.
 #
 #   mise install          provision the toolchain below
-#   mise run gate:loop    inner loop: ruff, pytest
+#   mise run gate:loop    inner loop: ruff, the corpus check, pytest
 #   mise run gate         full gate, the advancement gate
 #
 # Python is pinned to one minor release; the package itself declares
@@ -24,7 +24,11 @@ run = "uv run --frozen ruff check ."
 
 [tasks."gate:types"]
 description = "Type-check under mypy strict"
-run = "uv run --frozen mypy src tests"
+run = "uv run --frozen mypy src tests scripts"
+
+[tasks."gate:corpus"]
+description = "Check the vendored corpus's hash and case counts against its manifest and SOURCE.json"
+run = "uv run --frozen python scripts/check_corpus.py"
 
 [tasks."gate:test"]
 description = "Test with line and branch coverage, failing under 90 percent"
@@ -35,10 +39,11 @@ description = "Build the sdist and the wheel"
 run = "uv build --out-dir dist"
 
 [tasks."gate:loop"]
-description = "Inner loop: ruff, pytest"
+description = "Inner loop: ruff, the corpus check, pytest"
 run = [
   { task = "gate:format" },
   { task = "gate:lint" },
+  { task = "gate:corpus" },
   "uv run --frozen pytest",
 ]
 
@@ -48,6 +53,7 @@ run = [
   { task = "gate:format" },
   { task = "gate:lint" },
   { task = "gate:types" },
+  { task = "gate:corpus" },
   { task = "gate:test" },
   { task = "gate:build" },
 ]
