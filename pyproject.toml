@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "uxid"
+version = "0.0.1"
+description = "Prefixed, K-sortable, human-readable identifiers"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = []
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/riddler/uxid-py"
+Repository = "https://github.com/riddler/uxid-py"
+Changelog = "https://github.com/riddler/uxid-py/blob/main/CHANGELOG.md"
+Issues = "https://github.com/riddler/uxid-py/issues"
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff",
+  "mypy",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md", "/LICENSE", "/CHANGELOG.md", "/pyproject.toml"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/uxid"]
+
+[tool.ruff]
+src = ["src", "tests"]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+# Pyflakes, pycodestyle, import order, naming, pyupgrade, bugbear, simplify,
+# ruff's own rules, docstring presence on public API (D1) and pytest style.
+select = ["E", "W", "F", "I", "N", "UP", "B", "SIM", "RUF", "D1", "PT"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D1"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.coverage.run]
+source = ["uxid"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
