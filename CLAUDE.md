@@ -141,12 +141,14 @@ checks; it has no runtime dependencies, takes its random bytes from
 code is gone from `main`; the tree is a `src/uxid` package that carries
 `generate` (time-based ids, with an injectable byte source, and deterministic
 ids from a string, hashed with `hashlib.sha256`), its refusal `UXIDError`,
-`__version__` (read from the installed package metadata) and a `py.typed`
-marker, with its tests under `tests/` and `pyproject.toml`, `uv.lock` and
-`mise.toml` beside them. Monotonic generation, decoding, the validity checks,
-CI and the vendored corpus arrive with later
-changes; until they do, the sentences in this file about the 1.0.0 package,
-its corpus and its workflows describe the target, not the current tree.
+`decode` (answering a `Decoded` or an `Invalid`, never raising on a malformed
+string, with an injectable clock for compact times), the validity checks
+`is_valid` and `is_deterministic`, `__version__` (read from the installed
+package metadata) and a `py.typed` marker, with its tests under `tests/` and
+`pyproject.toml`, `uv.lock` and `mise.toml` beside them. Monotonic
+generation, CI and the vendored corpus arrive with later changes; until
+they do, the sentences in this file about the 1.0.0 package, its corpus and
+its workflows describe the target, not the current tree.
 
 - **The package is `uxid`.** Version 1.0.0 replaces the 2020 0.0.1
   placeholder on PyPI under the same project name, and its import name is

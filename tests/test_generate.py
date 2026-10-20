@@ -783,11 +783,17 @@ def test_the_public_surface() -> None:
     assert sorted(uxid.__all__) == [
         "ByteSource",
         "Case",
+        "Decoded",
         "ErrorCode",
+        "Invalid",
+        "InvalidReason",
         "Size",
         "UXIDError",
         "__version__",
+        "decode",
         "generate",
+        "is_deterministic",
+        "is_valid",
     ]
     parameters = inspect.signature(uxid.generate).parameters
     assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in parameters.values())
