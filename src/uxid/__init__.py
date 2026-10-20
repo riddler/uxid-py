@@ -6,7 +6,9 @@ with random bytes, in Crockford Base32; or, given a string to hash, a
 deterministic body that is the same for the same arguments. It follows the
 wire format of the Elixir ``uxid`` package (uxid-ex's
 ``guides/wire-format.md``), so the two produce the same strings for the same
-inputs. ``uxid.decode`` reads an id back, and ``uxid.is_valid`` and
+inputs. ``uxid.Monotonic`` is a generator whose ids increase strictly, also
+within one millisecond, and which one may share across threads.
+``uxid.decode`` reads an id back, and ``uxid.is_valid`` and
 ``uxid.is_deterministic`` check one.
 
 >>> import uxid
@@ -32,6 +34,7 @@ from uxid._decode import (
 )
 from uxid._errors import ErrorCode, UXIDError
 from uxid._generate import ByteSource, Case, Size, generate
+from uxid._monotonic import Draws, Monotonic
 
 __version__ = version("uxid")
 
@@ -39,9 +42,11 @@ __all__ = [
     "ByteSource",
     "Case",
     "Decoded",
+    "Draws",
     "ErrorCode",
     "Invalid",
     "InvalidReason",
+    "Monotonic",
     "Size",
     "UXIDError",
     "__version__",
