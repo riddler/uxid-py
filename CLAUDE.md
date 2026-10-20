@@ -154,7 +154,9 @@ and the two GitHub Actions workflows: CI (`.github/workflows/ci.yml`) and the
 tag-push release (`.github/workflows/release.yml`, with the checks it runs
 before a build in `scripts/release_guard.py`). The version in
 `pyproject.toml` is `1.0.0`, the version the release workflow publishes once
-the tag `v1.0.0` is pushed.
+the tag `v1.0.0` is pushed and PyPI accepts that workflow's publish, which it
+does only once the `uxid` project's settings there name this repository and
+workflow as its trusted publisher.
 
 - **The package is `uxid`.** Version 1.0.0 replaces the 2020 0.0.1
   placeholder on PyPI under the same project name, and its import name is

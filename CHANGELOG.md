@@ -25,15 +25,17 @@ dependencies. To stay on the placeholder, pin `uxid==0.0.1`; the README's
   then the first bits of the SHA-256 of the prefix, the string and the size, so
   the same arguments always give the same id, and it sorts after every
   time-based id with the same prefix and case.
-- `uxid.decode(id_, delimiter="_", now=None)` reads an id back and never raises
-  on a malformed string: a well-formed id gives a frozen `Decoded` with
-  `prefix`, `size`, `compact`, `deterministic`, `time` and `negative`, and
-  anything else a frozen `Invalid` whose `reason` is `empty`,
-  `invalid_length` or `invalid_character`. A compact time takes its high bits
-  from `now` (default the system clock), so the clock is injectable.
-- `uxid.is_valid(id_, prefix=None, delimiter="_")` is whether the id decodes
-  and, when `prefix` is given, carries exactly that prefix;
-  `uxid.is_deterministic(id_, delimiter="_")` is whether it decodes to a
+- `uxid.decode(id_, *, delimiter="_", now=None)` reads an id back and never
+  raises on a malformed string: a well-formed id gives a frozen `Decoded` with
+  `prefix`, `size`, `compact`, `deterministic` and `time`, and anything else
+  a frozen `Invalid` whose `reason` is `empty`, `invalid_length` or
+  `invalid_character`. A compact time takes its high bits from `now` (default
+  the system clock), so the clock is injectable; `time` can be negative for a
+  compact time more than a day ahead of a clock in the first 2**40 ms after
+  the Unix epoch.
+- `uxid.is_valid(id_, *, prefix=None, delimiter="_")` is whether the id
+  decodes and, when `prefix` is given, carries exactly that prefix;
+  `uxid.is_deterministic(id_, *, delimiter="_")` is whether it decodes to a
   deterministic body. Neither raises on the id.
 - `uxid.Monotonic(...)` is a generator whose ids increase strictly, within one
   millisecond and when the clock moves back, by the monotonic rule of the wire
