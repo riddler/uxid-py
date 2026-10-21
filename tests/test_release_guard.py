@@ -129,6 +129,51 @@ def test_the_default_pyproject_is_the_repositorys(
     assert capsys.readouterr().out == f"{version}\n"
 
 
+# --- address
+
+
+# sabotage: writing a fixed project name into the address fails it
+def test_the_address_names_the_projects_name_and_the_stated_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    other = pyproject(tmp_path, '[project]\nname = "other-name"\nversion = "2.0.0"\n')
+    assert (
+        guard.address("v2.0.0", other) == "https://pypi.org/project/other-name/2.0.0/"
+    )
+    argv = ["release_guard.py", "address", "--tag", "v2.0.0", "--pyproject", str(other)]
+    assert main(argv) == 0
+    assert capsys.readouterr().out == "https://pypi.org/project/other-name/2.0.0/\n"
+
+
+# sabotage: building the address from the tag without the version check fails it
+def test_the_address_refuses_a_tag_naming_another_version(
+    stated: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(GuardError, match=re.escape("at the tagged commit says 1.2.3")):
+        guard.address("v1.2.4", stated)
+    argv = [
+        "release_guard.py",
+        "address",
+        "--tag",
+        "v1.2.4",
+        "--pyproject",
+        str(stated),
+    ]
+    assert main(argv) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("::error::v1.2.4 names 1.2.4 but")
+
+
+# sabotage: pointing the default pyproject.toml elsewhere fails it
+def test_the_default_address_is_the_repositorys_project(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    name, version = guard.project(ROOT_PYPROJECT)
+    assert main(["release_guard.py", "address", "--tag", f"v{version}"]) == 0
+    assert capsys.readouterr().out == f"https://pypi.org/project/{name}/{version}/\n"
+
+
 # --- pypi
 
 

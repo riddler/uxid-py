@@ -200,8 +200,8 @@ The full gate runs `ruff format --check`, `ruff check`, `mypy --strict` over
 (`scripts/check_corpus.py`, which recomputes the corpus hash and each case
 file's case count by the reference's rule and fails on a difference from
 `manifest.json` or `conformance/SOURCE.json`), the tests under pytest with
-coverage measured on lines and branches (failing under 90 percent), the
-corpus runner among them, and `uv build`.
+coverage of the package and of `scripts/` measured on lines and branches
+(failing under 90 percent), the corpus runner among them, and `uv build`.
 
 CI (`.github/workflows/ci.yml`) runs the full gate, read from
 `.claude/wurk.json`, on the Python `mise.toml` pins, and the tests on each

@@ -27,11 +27,14 @@ name: Release
 #   builds anything, and nothing is installed in it beyond what that action
 #   brings.
 #
-# Every action `publish` uses is pinned to a full commit SHA, with its
-# version in a trailing comment, because every step in that job can reach
-# the OIDC request credentials and a moved tag must not be able to mint a
-# PyPI token. `verify` and ci.yml keep major-version tags: neither holds any
-# permission beyond contents: read, so a moved tag there cannot reach one.
+# Every action this workflow uses, in both jobs, is pinned to a full commit
+# SHA, with its version in a trailing comment. In `publish`, every step can
+# reach the OIDC request credentials, and a moved tag must not be able to
+# mint a PyPI token. In `verify`, the actions check out the source the build
+# reads, install the toolchain that builds it and store the files `publish`
+# uploads, so a moved tag there could change what is published without ever
+# reaching a token. ci.yml keeps major-version tags: it holds no permission
+# beyond contents: read, and nothing it builds is published.
 #
 # A failure in `verify` publishes nothing: `publish` does not start and no
 # token is asked for. A failure in `publish` before the upload publishes
@@ -44,6 +47,14 @@ name: Release
 # stops at the "already on PyPI" check (in `verify`, or in `publish` when
 # that job is re-run alone) and reports it, and the run stays red although
 # the version was published. No failure moves or deletes the tag.
+#
+# A version left on PyPI with only some of its files is never completed:
+# this workflow stops at the "already on PyPI" check on every re-run, and
+# the missing files are never uploaded by hand (see the last paragraph of
+# this header). The remedy is a new patch version, through a new release
+# prep and the tag that names it. Whether to yank the incomplete version is
+# the maintainer's choice, made in the PyPI console; this workflow never
+# yanks or deletes anything on PyPI.
 #
 # The manual act this workflow needs is a re-run from the run's page in the
 # Actions tab (every job, or the failed `publish` job alone, which reuses the
@@ -113,7 +124,7 @@ jobs:
     steps:
       # The tagged commit, by SHA. Full history: the ancestry check below
       # walks it.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -130,7 +141,9 @@ jobs:
 
       # The three checks are scripts/release_guard.py at the tagged commit,
       # run with the runner's own python3 (the script uses the standard
-      # library only), so they run before any toolchain is installed.
+      # library only), so they run before any toolchain is installed. Its
+      # tests (tests/test_release_guard.py) run in the gate, and the gate's
+      # coverage measurement covers scripts/ as well as the package.
       - name: Check the tagged commit is on the default branch
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -155,7 +168,7 @@ jobs:
       # Python release and uv, at the versions pinned there. No tool cache is
       # restored in either job of this workflow: a release installs its tools
       # fresh rather than from a cache another run wrote.
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.8.2
           cache: false
@@ -223,7 +236,7 @@ jobs:
       # The two distributions and SHA256SUMS, under release/, as one
       # artifact `publish` downloads.
       - name: Upload the distributions
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: distributions
           path: release/
@@ -305,8 +318,8 @@ jobs:
         with:
           packages-dir: release/dist/
 
+      # The project name and the version both come from pyproject.toml at
+      # the tagged commit, through the guard script, which also checks the
+      # tag names that version again.
       - name: Print the published version's address
-        run: |
-          set -euo pipefail
-          version="$(python3 scripts/release_guard.py version --tag "$GITHUB_REF_NAME")"
-          echo "https://pypi.org/project/uxid/${version}/"
+        run: python3 scripts/release_guard.py address --tag "$GITHUB_REF_NAME"

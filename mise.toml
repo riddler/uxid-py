@@ -40,8 +40,8 @@ description = "Check the vendored corpus's hash and case counts against its mani
 run = "uv run --frozen python scripts/check_corpus.py"
 
 [tasks."gate:test"]
-description = "Test with line and branch coverage, failing under 90 percent"
-run = "uv run --frozen pytest --cov=uxid --cov-branch --cov-report=term-missing --cov-fail-under=90"
+description = "Test with line and branch coverage of the package and scripts/, failing under 90 percent"
+run = "uv run --frozen pytest --cov=uxid --cov=scripts --cov-branch --cov-report=term-missing --cov-fail-under=90"
 
 [tasks."gate:build"]
 description = "Build the sdist and the wheel"
