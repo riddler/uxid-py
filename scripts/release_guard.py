@@ -15,9 +15,16 @@ three refusals that stop a release:
   version PyPI has seen can never be uploaded again; any other answer, or no
   answer, stops the run too.
 
+After the upload the workflow calls it once more:
+
+- ``address``: the same check as ``version``; on success the address of that
+  version of the project ``pyproject.toml`` names on PyPI is printed, alone,
+  on standard output.
+
     python3 scripts/release_guard.py branch --default-branch BRANCH
     python3 scripts/release_guard.py version --tag TAG [--pyproject PATH]
     python3 scripts/release_guard.py pypi --tag TAG [--pyproject PATH]
+    python3 scripts/release_guard.py address --tag TAG [--pyproject PATH]
 
 Each subcommand exits 0 when its check holds and 1, with one ``::error::``
 line (a GitHub Actions error annotation) on standard error, when it does not.
@@ -38,6 +45,9 @@ PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 # PyPI's JSON API: one version of one project.
 PYPI_VERSION_URL = "https://pypi.org/pypi/{name}/{version}/json"
+
+# PyPI's page for one version of one project.
+PYPI_PROJECT_URL = "https://pypi.org/project/{name}/{version}/"
 
 USER_AGENT = "uxid-py release workflow (https://github.com/riddler/uxid-py)"
 
@@ -93,6 +103,17 @@ def check_version(tag: str, pyproject: Path) -> str:
             f" {stated}; nothing is published"
         )
     return stated
+
+
+def address(tag: str, pyproject: Path) -> str:
+    """The PyPI address of the version ``tag`` names, when ``pyproject`` states it.
+
+    The project name is ``pyproject``'s. Raises ``GuardError`` when the tag
+    does not name exactly the version ``pyproject`` states.
+    """
+    version = check_version(tag, pyproject)
+    name, _ = project(pyproject)
+    return PYPI_PROJECT_URL.format(name=name, version=version)
 
 
 def http_status(url: str) -> int:
@@ -183,6 +204,7 @@ def parser() -> argparse.ArgumentParser:
     for name, text in (
         ("version", "the tag names pyproject.toml's version"),
         ("pypi", "PyPI does not already show the version"),
+        ("address", "print the version's address on PyPI"),
     ):
         sub = checks.add_parser(name, help=text)
         sub.add_argument("--tag", required=True)
@@ -202,6 +224,8 @@ def main(argv: list[str], fetch: Callable[[str], int] = http_status) -> int:
             print(check_branch(args.default_branch), file=sys.stderr)
         elif args.check == "version":
             print(check_version(args.tag, args.pyproject))
+        elif args.check == "address":
+            print(address(args.tag, args.pyproject))
         else:
             print(check_pypi(args.tag, args.pyproject, fetch), file=sys.stderr)
     except GuardError as error:
